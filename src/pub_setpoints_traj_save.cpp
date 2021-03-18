@@ -6,7 +6,7 @@
 
 #include <ros/ros.h>
 #include <geometry_msgs/PoseStamped.h>
-
+#include <geometry_msgs/TwistStamped.h>
 #include <mavros_msgs/CommandBool.h>
 #include <mavros_msgs/SetMode.h>
 #include <mavros_msgs/State.h>
@@ -24,44 +24,60 @@ void state_cb(const mavros_msgs::State::ConstPtr& msg){
 
 int main(int argc, char **argv)
 {
-    ros::init(argc, argv, "test_node");
+    ros::init(argc, argv, "offb_node");
     ros::NodeHandle nh;
 
     ros::Subscriber state_sub = nh.subscribe<mavros_msgs::State>
             ("mavros/state", 10, state_cb);
     ros::Publisher local_pos_pub = nh.advertise<geometry_msgs::PoseStamped>
-            ("mavros/setpoint_position/local", 10); // 10 -> que size
+            ("mavros/setpoint_position/local", 10);
+    ros::Publisher local_pos_twi = nh.advertise<geometry_msgs::TwistStamped>
+            ("mavros/setpoint_twist/local",10);
+    ros::ServiceClient arming_client = nh.serviceClient<mavros_msgs::CommandBool>
+            ("mavros/cmd/arming");
+    ros::ServiceClient set_mode_client = nh.serviceClient<mavros_msgs::SetMode>
+            ("mavros/set_mode");
 
     //the setpoint publishing rate MUST be faster than 2Hz
-    ros::Rate rate(100);
+    ros::Rate rate(20);
 	
 
 	nh.param("pub_setpoints_traj/wn", wn, 1.0);
 	nh.param("pub_setpoints_traj/r", r, 1.0);
     // wait for FCU connection
-    while(ros::ok() && current_state.connected){
-	ROS_INFO("ros:ok current_state.connected");
-        ros::spinOnce();
-        rate.sleep();
-    }
+    //while(ros::ok() && current_state.connected){
+    //    ros::spinOnce();
+    //    rate.sleep();
+    //}
 
     geometry_msgs::PoseStamped pose;
     pose.pose.position.x = 0;
     pose.pose.position.y = 0;
     pose.pose.position.z = 2;
 
+    geometry_msgs::TwistStamped twist;
+    twist.twist.linear.x = 0;
+    twist.twist.linear.y = 0;
+    twist.twist.linear.z = 0;
+
     //send a few setpoints before starting
-    for(int i = 100; ros::ok() && i > 0; --i){
-	ROS_INFO("ping");
-        local_pos_pub.publish(pose); // pushlish -> pose ( pose = geometry_msgs::PoseStamped )
+    for(int i = 1000; ros::ok() && i > 0; --i){
+        local_pos_pub.publish(pose);
+        //local_pos_twi.publish(twist);
         ros::spinOnce();
         rate.sleep();
     }
 
+    mavros_msgs::SetMode offb_set_mode;
+    offb_set_mode.request.custom_mode = "OFFBOARD";
+
+    mavros_msgs::CommandBool arm_cmd;
+    arm_cmd.request.value = true;
+
     ros::Time last_request = ros::Time::now();
-    ROS_INFO("Mission Start");
+
     while(ros::ok()){
-       
+
 
 	theta = wn*count*0.05;
 
@@ -69,9 +85,14 @@ int main(int argc, char **argv)
     	pose.pose.position.y = r*cos(theta);
     	pose.pose.position.z = 2;
 
+        twist.twist.linear.x = theta*180/3.14;
+        twist.twist.linear.y = (90-theta)*180/3.14;
+        twist.twist.linear.z = 0;
+
 	count++;
 
         local_pos_pub.publish(pose);
+        local_pos_twi.publish(twist);
         ros::spinOnce();
         rate.sleep();
     }
